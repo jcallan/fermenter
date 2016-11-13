@@ -1,2 +1,2 @@
 #!/bin/sh
-gcc fermenter.c -o fermenter
+gcc fermenter.c -lpthread -o fermenter
