@@ -12,13 +12,13 @@
 
 #define NUM_FERMENTERS		2
 #define NUM_LEDS			3
-#define TIME_INCREMENT_S	60
+#define TIME_INCREMENT_S	60	/* TODO use 3600 and allow floating point hours */
 
 #define FIFO_IN_FILE_NAME	"/var/tmp/fermenter.in"
 #define FIFO_OUT_FILE_NAME	"/var/tmp/fermenter.out"
 #define LOCK_FILE_TEMPLATE	"/var/tmp/fermenter%u"
-#define GPIO_CMD_TEMPLATE	"gpio export %u out"
-#define LED_FILE_TEMPLATE	"/sys/class/gpio/gpio%u/value"
+#define GPIO_CMD_TEMPLATE	"gpio export %u high"
+#define GPIO_FILE_TEMPLATE	"/sys/class/gpio/gpio%u/value"
 
 typedef struct programme_s
 {
@@ -44,8 +44,8 @@ typedef struct
 	programme_t *current;
 } fermenter_t;
 
-const unsigned led_index[NUM_LEDS] = {2, 3, 4};
-const unsigned heater_index[NUM_FERMENTERS] = {5, 6};
+const unsigned led_index[NUM_LEDS] = {3, 14, 15};		/* GPIO pins for LEDs */
+const unsigned heater_index[NUM_FERMENTERS] = {24, 10};	/* GPIO pins for relays */
 const char fermenter_id[NUM_FERMENTERS] = {'A', 'B'};
 
 void init_gpio(void)
@@ -63,6 +63,15 @@ void init_gpio(void)
 			printf("Executing '%s' failed with return code %d\n", ret);
 		}
 	}
+	for (i = 0; i < NUM_FERMENTERS; ++i)
+	{
+		sprintf(buf, GPIO_CMD_TEMPLATE, heater_index[i]);
+		ret = system(buf);
+		if (ret != 0)
+		{
+			printf("Executing '%s' failed with return code %d\n", ret);
+		}
+	}
 }
 
 void *update_leds(void *arg)
@@ -73,7 +82,7 @@ void *update_leds(void *arg)
 
 	for (i = 0; i < NUM_LEDS; ++i)
 	{
-		sprintf(buf, LED_FILE_TEMPLATE, led_index[i]);
+		sprintf(buf, GPIO_FILE_TEMPLATE, led_index[i]);
 		led[i] = fopen(buf, "w");
 
 		if (led[i] == NULL)
@@ -164,8 +173,11 @@ void start_programme(programme_t *head)
 	programme_t *prog;
 	int step_no = 0;
 	
+	/* Write start time to lock file */
 	now = time(NULL);
+	/* TODO */
 	
+	/* Write the correct start time to each programme step */
 	for (prog = head; prog != NULL; prog = prog->next)
 	{
 		prog->start_time = now;
@@ -181,14 +193,30 @@ void start_programme(programme_t *head)
 void *run_fermenter(void *arg)
 {
 	fermenter_t *f = (fermenter_t *)arg;
+	FILE *heater;
+	char buf[80];
+	int i, heat = 0;
 	
 	f->head = load_programme("cb1.programme");
 	start_programme(f->head);
 	
+	/* Open the file that controls the GPIO pin for our heater */
+	sprintf(buf, GPIO_FILE_TEMPLATE, f->gpio);
+	heater = fopen(buf, "w");
+
+	if (heater == NULL)
+	{
+		printf("Could not open heater %c\n", f->id);
+		return (void *)4;
+	}
+	
 	while (f->command == FERMENTER_NO_COMMAND)
 	{
-		sleep(1);
-		printf("%c ", f->id);
+		sleep(15);
+		heat = 1 - heat;
+		fprintf(heater, "%d", heat);
+		fflush(heater);
+		printf("%c%d ", f->id, heat);
 		fflush(stdout);
 	}
 	
