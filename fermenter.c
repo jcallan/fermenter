@@ -1,33 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <time.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include "fermenter.h"
 
 #define VERSION_MAJOR		0
 #define VERSION_MINOR		1
 
-#define NUM_FERMENTERS		2
-#define NUM_LEDS			3
-#define TIME_INCREMENT_S	60	/* TODO use 3600 and allow floating point hours */
-
 #define FIFO_IN_FILE_NAME	"/var/tmp/fermenter.in"
 #define FIFO_OUT_FILE_NAME	"/var/tmp/fermenter.out"
 #define LOCK_FILE_TEMPLATE	"/var/tmp/fermenter%u"
-#define GPIO_CMD_TEMPLATE	"gpio export %u high"
-#define GPIO_FILE_TEMPLATE	"/sys/class/gpio/gpio%u/value"
 
-typedef struct programme_s
-{
-	float start_temp;
-	float end_temp;
-	time_t start_time;
-	unsigned length;
-	struct programme_s *next;
-} programme_t;
+const char fermenter_id[NUM_FERMENTERS] = {'A', 'B'};
 
 typedef enum 
 {
@@ -38,186 +26,30 @@ typedef enum
 typedef struct
 {
 	char id;
-	int gpio;
+	unsigned index;
 	volatile fermenter_cmd_t command;
 	programme_t *head;
 	programme_t *current;
 } fermenter_t;
 
-const unsigned led_index[NUM_LEDS] = {3, 14, 15};		/* GPIO pins for LEDs */
-const unsigned heater_index[NUM_FERMENTERS] = {24, 10};	/* GPIO pins for relays */
-const char fermenter_id[NUM_FERMENTERS] = {'A', 'B'};
-
-void init_gpio(void)
-{
-	int i, ret;
-	char buf[80];
-
-	/* Use the gpio utility to export all the GPIOs we need */	
-	for (i = 0; i < NUM_LEDS; ++i)
-	{
-		sprintf(buf, GPIO_CMD_TEMPLATE, led_index[i]);
-		ret = system(buf);
-		if (ret != 0)
-		{
-			printf("Executing '%s' failed with return code %d\n", ret);
-		}
-	}
-	for (i = 0; i < NUM_FERMENTERS; ++i)
-	{
-		sprintf(buf, GPIO_CMD_TEMPLATE, heater_index[i]);
-		ret = system(buf);
-		if (ret != 0)
-		{
-			printf("Executing '%s' failed with return code %d\n", ret);
-		}
-	}
-}
-
-void *update_leds(void *arg)
-{
-	FILE *led[NUM_LEDS];
-	char buf[80];
-	int i, blink = 0;
-
-	for (i = 0; i < NUM_LEDS; ++i)
-	{
-		sprintf(buf, GPIO_FILE_TEMPLATE, led_index[i]);
-		led[i] = fopen(buf, "w");
-
-		if (led[i] == NULL)
-		{
-			printf("Could not open led[%u]\n", i);
-			return (void *)4;
-		}
-	}		
-
-	/* Loop while updating the LED statuses */
-	while(1)
-	{
-		sleep(1);
-		blink = 1 - blink;
-		fprintf(led[0], "%d", blink);
-		fflush(led[0]);
-	}
-}
-
-programme_t *load_programme(const char *file_name)
-{
-	FILE *programme_file;
-	programme_t *head = NULL, *prog = NULL, *last = NULL;
-	float start_temp, end_temp;
-	unsigned length;
-	char buf[80];
-	int ret;
-	
-	programme_file = fopen(file_name, "r");
-	if (programme_file == NULL)
-	{
-		printf("%s opening programme file %s\n", strerror(errno), file_name);
-		return NULL;
-	}
-	
-	do
-	{
-		fgets(buf, sizeof(buf), programme_file);
-		ret = sscanf(buf, "%f %f %u", &start_temp, &end_temp, &length);
-		if (ret != 3)
-		{
-			printf("Failed to read 3 arguments from line '%s'\n", buf);
-		}
-		else
-		{
-			prog = calloc(1, sizeof(programme_t));
-			if (prog)
-			{
-				prog->start_temp = start_temp;
-				prog->end_temp   = end_temp;
-				prog->length     = length;
-				prog->start_time = 0;
-				
-				if (last)
-				{
-					last->next = prog;
-				}
-				if (!head)
-				{
-					head = prog;
-				}
-				last = prog;
-				printf("Added step: %.1f->%.1f in %u minutes\n",
-					   prog->start_temp, prog->end_temp, prog->length);
-			}
-		}
-	} while (!feof(programme_file));
-
-	return head;		
-}
-
-void free_programme(programme_t *head)
-{
-	programme_t *tmp;
-	
-	while (head)
-	{
-		tmp = head->next;
-		free(head);
-		head = tmp;
-	}
-}
-
-void start_programme(programme_t *head)
-{
-	time_t now;
-	char *buf;
-	programme_t *prog;
-	int step_no = 0;
-	
-	/* Write start time to lock file */
-	now = time(NULL);
-	/* TODO */
-	
-	/* Write the correct start time to each programme step */
-	for (prog = head; prog != NULL; prog = prog->next)
-	{
-		prog->start_time = now;
-		now += prog->length * TIME_INCREMENT_S;
-		buf = ctime(&prog->start_time);
-		buf[strlen(buf) - 1] = 0;
-		printf("Step %2d: %s %.1f->%.1f\n", step_no, buf,
-			   prog->start_temp, prog->end_temp);
-		++step_no;
-	}
-}
-
 void *run_fermenter(void *arg)
 {
 	fermenter_t *f = (fermenter_t *)arg;
-	FILE *heater;
-	char buf[80];
-	int i, heat = 0;
+	int heat = 0;
+	float t_actual, t_desired;
+	time_t now;
 	
 	f->head = load_programme("cb1.programme");
 	start_programme(f->head);
 	
-	/* Open the file that controls the GPIO pin for our heater */
-	sprintf(buf, GPIO_FILE_TEMPLATE, f->gpio);
-	heater = fopen(buf, "w");
-
-	if (heater == NULL)
-	{
-		printf("Could not open heater %c\n", f->id);
-		return (void *)4;
-	}
-	
 	while (f->command == FERMENTER_NO_COMMAND)
 	{
-		sleep(15);
-		heat = 1 - heat;
-		fprintf(heater, "%d", heat);
-		fflush(heater);
-		printf("%c%d ", f->id, heat);
-		fflush(stdout);
+		now = time(NULL);
+		t_actual = read_temperature(f->index);
+		t_desired = programme_temperature(f->head, now);
+		printf("Fermenter %c: actual %.2f, desired %.2f\n", t_actual, t_desired);
+		set_heater(f->index, t_actual < t_desired);
+		sleep(60);
 	}
 	
 	return NULL;
@@ -340,7 +172,7 @@ void read_lock_file(int f)
 	
 int main(int argc, const char *argv[])
 {
-	int i;
+	int i, ret;
 	pthread_t listener_thread, led_thread, fermenter_thread[NUM_FERMENTERS];
 	FILE *control_fifo;
 	void *listener_return;
@@ -369,14 +201,18 @@ int main(int argc, const char *argv[])
 	for (i = 0; i < NUM_FERMENTERS; ++i)
 	{
 		fermenter[i].id      = fermenter_id[i];
-		fermenter[i].gpio    = heater_index[i];
+		fermenter[i].index   = i;
 		fermenter[i].head    = NULL;
 		fermenter[i].current = NULL;
 		fermenter[i].command = FERMENTER_NO_COMMAND;
 		read_lock_file(i);
 	}
 	
-	init_gpio();
+	ret = init_gpio();
+	if (ret != 0)
+	{
+		return ret;
+	}
 	
 	/* Start the other threads */
 	pthread_create(&listener_thread, NULL, listener, NULL);

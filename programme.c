@@ -92,3 +92,30 @@ void start_programme(programme_t *head)
 		++step_no;
 	}
 }
+
+float programme_temperature(programme_t *prog, time_t now)
+{
+	float temperature = 0.0, done_fraction;
+	time_t end_time;
+	
+	while (prog)
+	{
+		end_time = prog->start_time + prog->length * TIME_INCREMENT_S;
+		if ((prog->start_time <= now) && (end_time >= now))
+		{
+			if (end_time == prog->start_time)
+			{
+				done_fraction = 1.0;
+			}
+			else
+			{
+				done_fraction = (now - prog->start_time) / (end_time - prog->start_time);
+			}
+			temperature = prog->start_temp * (1.0 - done_fraction) + prog->end_temp * done_fraction;
+			break;
+		}
+		prog = prog->next;
+	}
+	
+	return temperature;
+}
