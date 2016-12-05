@@ -20,6 +20,7 @@ typedef struct programme_s
 
 extern programme_t *load_programme(const char *file_name);
 extern void start_programme(programme_t *head);
+extern void restart_programme(programme_t *head, time_t start_time);
 extern void free_programme(programme_t *head);
 extern float programme_temperature(programme_t *prog, time_t now);
 

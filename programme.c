@@ -70,28 +70,31 @@ void free_programme(programme_t *head)
 	}
 }
 
-void start_programme(programme_t *head)
+void restart_programme(programme_t *head, time_t start_time)
 {
-	time_t now;
 	char *buf;
 	programme_t *prog;
 	int step_no = 0;
 	
-	/* Write start time to lock file */
-	now = time(NULL);
-	/* TODO */
-	
 	/* Write the correct start time to each programme step */
 	for (prog = head; prog != NULL; prog = prog->next)
 	{
-		prog->start_time = now;
-		now += (time_t)(prog->length * SECONDS_PER_TIME_UNIT);
+		prog->start_time = start_time;
+		start_time += (time_t)(prog->length * SECONDS_PER_TIME_UNIT);
 		buf = ctime(&prog->start_time);
 		buf[strlen(buf) - 1] = 0;
 		++step_no;
 		printf("Step %2d: %s %.1f->%.1f\n", step_no, buf,
 			   prog->start_temp, prog->end_temp);
 	}
+}
+
+void start_programme(programme_t *head)
+{
+	time_t now;
+	
+	now = time(NULL);
+	restart_programme(head, now);
 }
 
 float programme_temperature(programme_t *prog, time_t now)

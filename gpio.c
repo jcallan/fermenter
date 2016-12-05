@@ -14,6 +14,8 @@ const unsigned heater_index[NUM_FERMENTERS] = {24, 10};	/* GPIO pins for relays 
 const unsigned long long sensor_serial[NUM_FERMENTERS] = {0x03168169dfffull, 0x0ull};
 
 static FILE *heater[NUM_FERMENTERS];
+static FILE *led[NUM_LEDS];
+
 
 float read_temperature(unsigned index)
 {
@@ -77,6 +79,8 @@ void set_heater(unsigned index, int on)
 	{
 		fprintf(heater[index], "%u", (on ? 0 : 1));
 		fflush(heater[index]);
+		fprintf(led[index], "%d", on);
+		fflush(led[index]);
 	}
 	else
 	{
@@ -122,15 +126,7 @@ int init_gpio(void)
 		}
 	}
 	
-	return 0;	
-}
-
-void *update_leds(void *arg)
-{
-	FILE *led[NUM_LEDS];
-	char buf[80];
-	int i, blink = 0;
-
+	/* Open the file that controls the GPIO pin for each LED */
 	for (i = 0; i < NUM_LEDS; ++i)
 	{
 		sprintf(buf, GPIO_FILE_TEMPLATE, led_index[i]);
@@ -139,20 +135,24 @@ void *update_leds(void *arg)
 		if (led[i] == NULL)
 		{
 			printf("Could not open led[%u]\n", i);
-			return (void *)4;
+			return 4;
 		}
 	}		
+
+	return 0;	
+}
+
+void *update_leds(void *arg)
+{
+	int blink = 0;
 
 	/* Loop while updating the LED statuses */
 	while(1)
 	{
 		sleep(1);
 		blink = 1 - blink;
-		for (i = 0; i < NUM_LEDS; ++i)
-		{
-			fprintf(led[i], "%d", blink);
-			fflush(led[i]);
-		}
+		fprintf(led[LED_C], "%d", blink);
+		fflush(led[LED_C]);
 	}
 }
 

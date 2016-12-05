@@ -15,6 +15,8 @@
 #define FIFO_OUT_FILE_NAME	"/var/tmp/fermenter.out"
 #define LOCK_FILE_TEMPLATE	"/var/tmp/fermenter%u"
 
+#define FILE_NAME_LENGTH	80
+
 const char fermenter_id[NUM_FERMENTERS] = {'A', 'B'};
 
 typedef enum 
@@ -30,17 +32,54 @@ typedef struct
 	volatile fermenter_cmd_t command;
 	programme_t *head;
 	programme_t *current;
+	time_t programme_start_time;
+	char programme_file_name[FILE_NAME_LENGTH];
 } fermenter_t;
+
+void write_lock_file(const fermenter_t *f);
+void read_lock_file(fermenter_t *f);
+
 
 void *run_fermenter(void *arg)
 {
 	fermenter_t *f = (fermenter_t *)arg;
-	int heat = 0;
+	int heat = 0, ret;
 	float t_actual, t_desired;
 	time_t now;
+
+	f->programme_start_time = 0;
+	read_lock_file(f);
+	if (f->programme_start_time && f->programme_file_name[0])
+	{
+		/* Attept to restart running programme */
+		f->head = load_programme(f->programme_file_name);
+		if (f->head)
+		{
+			restart_programme(f->head, f->programme_start_time);
+		}
+		else
+		{
+			printf("Failed to reload programme from %s\n", f->programme_file_name);
+		}
+	}
+	else
+	{
+		/* For now, start a fixed programme */
+		strcpy(f->programme_file_name, "cb1.programme");
+		f->head = load_programme(f->programme_file_name);
+		if (f->head)
+		{
+			start_programme(f->head);
+			f->programme_start_time = f->head->start_time;
+		}
+		else
+		{
+			printf("Failed to read programme!\n");
+		}
+	}
 	
-	f->head = load_programme("cb1.programme");
-	start_programme(f->head);
+	write_lock_file(f);
+
 	
 	while (f->command == FERMENTER_NO_COMMAND)
 	{
@@ -145,41 +184,50 @@ void *listener(void *arg)
 	return (void *)3;
 }
 
-void read_lock_file(int f)
+void read_lock_file(fermenter_t *f)
 {
-	char file_name[80], buf[80];
+	char lock_file_name[FILE_NAME_LENGTH], buf[FILE_NAME_LENGTH + 15];
 	FILE *lock_file;
 	char *p;
+	time_t start_time;
+	int ret;
 	
-	sprintf(file_name, LOCK_FILE_TEMPLATE, f);
-	lock_file = fopen(file_name, "r");
+	sprintf(lock_file_name, LOCK_FILE_TEMPLATE, f->index);
+	lock_file = fopen(lock_file_name, "r");
 	
 	if (!lock_file)
 	{
-		printf("Fermenter %d not running\n", f);
+		printf("Fermenter %c not running\n", f->id);
 	}
 	else
 	{
 		p = fgets(buf, sizeof(buf), lock_file);
 		if (p)
 		{
-			printf("Fermenter %d was running: lock file contains [%s]\n", buf);
+			printf("Fermenter %c was running: lock file contains %s\n", f->id, buf);
+			ret = sscanf(buf, "%lu %80s", &f->programme_start_time, f->programme_file_name);
+			if (ret != 2)
+			{
+				printf("Failed to read 2 arguments from lock file\n");
+				f->programme_file_name[0] = 0;
+				f->programme_start_time = 0;
+			}
 		}
 		else
 		{
-			printf("Corrupt lock file for fermenter %d\n", f);
+			printf("Corrupt lock file for fermenter %c\n", f->id);
 		}
 		fclose(lock_file);
-		unlink(file_name);
+		unlink(lock_file_name);
 	}
 }
 
-void write_lock_file(int f, time_t start_time, const char *programme_file)
+void write_lock_file(const fermenter_t *f)
 {
 	char file_name[80];
 	FILE *lock_file;
 
-	sprintf(file_name, LOCK_FILE_TEMPLATE, f);
+	sprintf(file_name, LOCK_FILE_TEMPLATE, f->index);
 	lock_file = fopen(file_name, "w");
 	
 	if (!lock_file)
@@ -188,7 +236,7 @@ void write_lock_file(int f, time_t start_time, const char *programme_file)
 	}
 	else
 	{
-		fprintf(lock_file, "%lu %s\n", start_time, programme_file);
+		fprintf(lock_file, "%lu %s\n", f->programme_start_time, f->programme_file_name);
 		fclose(lock_file);
 	}
 }
@@ -221,6 +269,12 @@ int main(int argc, const char *argv[])
 		}
 	}
 	
+	ret = init_gpio();
+	if (ret != 0)
+	{
+		return ret;
+	}
+	
 	/* Read the state of the fermenters, if running */
 	for (i = 0; i < NUM_FERMENTERS; ++i)
 	{
@@ -229,13 +283,9 @@ int main(int argc, const char *argv[])
 		fermenter[i].head    = NULL;
 		fermenter[i].current = NULL;
 		fermenter[i].command = FERMENTER_NO_COMMAND;
-		read_lock_file(i);
-	}
-	
-	ret = init_gpio();
-	if (ret != 0)
-	{
-		return ret;
+		fermenter[i].programme_file_name[0] = 0;
+		fermenter[i].programme_start_time   = 0;
+		set_heater(i, 0);
 	}
 	
 	/* Start the other threads */
