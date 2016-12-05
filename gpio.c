@@ -77,8 +77,6 @@ void set_heater(unsigned index, int on)
 	{
 		fprintf(heater[index], "%u", (on ? 0 : 1));
 		fflush(heater[index]);
-		printf("%d%d ", index, on);
-		fflush(stdout);
 	}
 	else
 	{

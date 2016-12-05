@@ -1,20 +1,20 @@
 
-#define NUM_FERMENTERS		2
-#define NUM_LEDS			3
+#define NUM_FERMENTERS			2
+#define NUM_LEDS				3
 
-#define TIME_INCREMENT_S	60	/* TODO use 3600 and allow floating point hours */
+#define TIME_INCREMENT_S		60
+#define SECONDS_PER_TIME_UNIT	3600
 
-#define LED_A		0
-#define LED_B		1
-#define LED_C		2
-
+#define LED_A					0
+#define LED_B					1
+#define LED_C					2
 
 typedef struct programme_s
 {
 	float start_temp;
 	float end_temp;
 	time_t start_time;
-	unsigned length;
+	float length;
 	struct programme_s *next;
 } programme_t;
 

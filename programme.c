@@ -9,10 +9,10 @@ programme_t *load_programme(const char *file_name)
 {
 	FILE *programme_file;
 	programme_t *head = NULL, *prog = NULL, *last = NULL;
-	float start_temp, end_temp;
-	unsigned length;
+	float start_temp, end_temp, length;
 	char buf[80];
 	int ret;
+	unsigned num_steps = 0;
 	
 	programme_file = fopen(file_name, "r");
 	if (programme_file == NULL)
@@ -24,7 +24,7 @@ programme_t *load_programme(const char *file_name)
 	do
 	{
 		fgets(buf, sizeof(buf), programme_file);
-		ret = sscanf(buf, "%f %f %u", &start_temp, &end_temp, &length);
+		ret = sscanf(buf, "%f %f %f", &start_temp, &end_temp, &length);
 		if (ret != 3)
 		{
 			printf("Failed to read 3 arguments from line '%s'\n", buf);
@@ -48,7 +48,8 @@ programme_t *load_programme(const char *file_name)
 					head = prog;
 				}
 				last = prog;
-				printf("Added step: %.1f->%.1f in %u minutes\n",
+				++num_steps;
+				printf("Step %u: %.1f->%.1f in %.1f hours\n", num_steps,
 					   prog->start_temp, prog->end_temp, prog->length);
 			}
 		}
@@ -84,12 +85,12 @@ void start_programme(programme_t *head)
 	for (prog = head; prog != NULL; prog = prog->next)
 	{
 		prog->start_time = now;
-		now += prog->length * TIME_INCREMENT_S;
+		now += (time_t)(prog->length * SECONDS_PER_TIME_UNIT);
 		buf = ctime(&prog->start_time);
 		buf[strlen(buf) - 1] = 0;
+		++step_no;
 		printf("Step %2d: %s %.1f->%.1f\n", step_no, buf,
 			   prog->start_temp, prog->end_temp);
-		++step_no;
 	}
 }
 
@@ -100,7 +101,7 @@ float programme_temperature(programme_t *prog, time_t now)
 	
 	while (prog)
 	{
-		end_time = prog->start_time + prog->length * TIME_INCREMENT_S;
+		end_time = prog->start_time + (time_t)(prog->length * SECONDS_PER_TIME_UNIT);
 		if ((prog->start_time <= now) && (end_time >= now))
 		{
 			if (end_time == prog->start_time)
@@ -109,7 +110,7 @@ float programme_temperature(programme_t *prog, time_t now)
 			}
 			else
 			{
-				done_fraction = (now - prog->start_time) / (end_time - prog->start_time);
+				done_fraction = (float)(now - prog->start_time) / (float)(end_time - prog->start_time);
 			}
 			temperature = prog->start_temp * (1.0 - done_fraction) + prog->end_temp * done_fraction;
 			break;

@@ -47,8 +47,10 @@ void *run_fermenter(void *arg)
 		now = time(NULL);
 		t_actual = read_temperature(f->index);
 		t_desired = programme_temperature(f->head, now);
-		printf("Fermenter %c: actual %.2f, desired %.2f\n", t_actual, t_desired);
-		set_heater(f->index, t_actual < t_desired);
+		heat = t_actual < t_desired;
+		printf("Fermenter %c: actual %.2f, desired %.2f, %s\n",
+			   f->id, t_actual, t_desired, heat ? "on" : "off");
+		set_heater(f->index, heat);
 		sleep(60);
 	}
 	
@@ -145,12 +147,12 @@ void *listener(void *arg)
 
 void read_lock_file(int f)
 {
-	char buf[80];
+	char file_name[80], buf[80];
 	FILE *lock_file;
 	char *p;
 	
-	sprintf(buf, LOCK_FILE_TEMPLATE, f);
-	lock_file = fopen(buf, "r");
+	sprintf(file_name, LOCK_FILE_TEMPLATE, f);
+	lock_file = fopen(file_name, "r");
 	
 	if (!lock_file)
 	{
@@ -167,8 +169,30 @@ void read_lock_file(int f)
 		{
 			printf("Corrupt lock file for fermenter %d\n", f);
 		}
+		fclose(lock_file);
+		unlink(file_name);
 	}
 }
+
+void write_lock_file(int f, time_t start_time, const char *programme_file)
+{
+	char file_name[80];
+	FILE *lock_file;
+
+	sprintf(file_name, LOCK_FILE_TEMPLATE, f);
+	lock_file = fopen(file_name, "w");
+	
+	if (!lock_file)
+	{
+		printf("Could not create lock file %s\n", file_name);
+	}
+	else
+	{
+		fprintf(lock_file, "%lu %s\n", start_time, programme_file);
+		fclose(lock_file);
+	}
+}
+
 	
 int main(int argc, const char *argv[])
 {
