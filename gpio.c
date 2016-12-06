@@ -121,7 +121,7 @@ int init_gpio(void)
 
 		if (heater[i] == NULL)
 		{
-			printf("Could not open heater %c\n", heater_index[i]);
+			printf("Could not open heater %u\n", heater_index[i]);
 			return 4;
 		}
 	}

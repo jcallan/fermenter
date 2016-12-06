@@ -17,6 +17,10 @@
 
 #define FILE_NAME_LENGTH	80
 
+#define DAEMON_GID			997			/* The gpio group */
+#define DAEMON_UID			1001		/* jcallan */
+
+
 const char fermenter_id[NUM_FERMENTERS] = {'A', 'B'};
 
 typedef enum 
@@ -65,7 +69,7 @@ void *run_fermenter(void *arg)
 	else
 	{
 		/* For now, start a fixed programme */
-		strcpy(f->programme_file_name, "cb1.programme");
+		realpath("cb1.programme", f->programme_file_name);
 		f->head = load_programme(f->programme_file_name);
 		if (f->head)
 		{
@@ -90,6 +94,7 @@ void *run_fermenter(void *arg)
 		printf("Fermenter %c: actual %.2f, desired %.2f, %s\n",
 			   f->id, t_actual, t_desired, heat ? "on" : "off");
 		set_heater(f->index, heat);
+		fflush(stdout);
 		sleep(60);
 	}
 	
@@ -224,7 +229,7 @@ void read_lock_file(fermenter_t *f)
 
 void write_lock_file(const fermenter_t *f)
 {
-	char file_name[80];
+	char file_name[FILE_NAME_LENGTH];
 	FILE *lock_file;
 
 	sprintf(file_name, LOCK_FILE_TEMPLATE, f->index);
@@ -241,7 +246,6 @@ void write_lock_file(const fermenter_t *f)
 	}
 }
 
-	
 int main(int argc, const char *argv[])
 {
 	int i, ret;
@@ -249,6 +253,19 @@ int main(int argc, const char *argv[])
 	FILE *control_fifo;
 	void *listener_return;
 	fermenter_t fermenter[NUM_FERMENTERS];
+	
+	/*  Drop superuser privileges */
+	if (setgid(DAEMON_GID) == -1)
+	{
+		perror("Failed to setguid");
+	}
+	if (setuid(DAEMON_UID) == -1)
+	{
+		perror("Failed to setuid\n");
+	}
+
+	/* Make sure our lock files can be deleted by anyone */
+	umask(0111);
 	
 	printf("%s version %u.%u\n", argv[0], VERSION_MAJOR, VERSION_MINOR);
 	for (i = 1; i < argc; ++i)
@@ -275,7 +292,7 @@ int main(int argc, const char *argv[])
 		return ret;
 	}
 	
-	/* Read the state of the fermenters, if running */
+	/* Initialise the state of the fermenters, if running */
 	for (i = 0; i < NUM_FERMENTERS; ++i)
 	{
 		fermenter[i].id      = fermenter_id[i];

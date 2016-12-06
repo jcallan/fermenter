@@ -55,6 +55,7 @@ programme_t *load_programme(const char *file_name)
 		}
 	} while (!feof(programme_file));
 
+	fclose(programme_file);
 	return head;		
 }
 
