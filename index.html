@@ -1,0 +1,47 @@
+<script src="/Chart.bundle.min.js"></script>
+<script>
+var $={};
+var jQuery = $;
+</script>
+<script src="/jquery.csv.min.js"></script>
+<canvas id="myChart" width="400" height="400"></canvas>
+
+<script>
+
+function main()
+{
+	var points_string = "x,y\n1,2\n3,4";
+	csv_data = $.csv.toArrays(points_string);
+	
+	var ctx = document.getElementById("myChart");
+    	var myChart = new Chart(ctx, {
+    	type: 'line',
+    	data: {
+        	datasets: [{
+            	label: 'Scatter Dataset',
+            	data: [{
+                	x: -10,
+                	y: 0
+            	}, {
+                	x: 0,
+                	y: 10
+            	}, {
+                	x: 10,
+                	y: 5
+            	}]
+        	}]
+    	},
+    	options: {
+        	scales: {
+            	xAxes: [{
+                	type: 'linear',
+                	position: 'bottom'
+            	}]
+        	}
+    	}
+	});
+}
+
+window.onload = main;
+
+</script>
