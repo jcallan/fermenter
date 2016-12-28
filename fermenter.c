@@ -14,8 +14,10 @@
 #define FIFO_IN_FILE_NAME	"/var/tmp/fermenter.in"
 #define FIFO_OUT_FILE_NAME	"/var/tmp/fermenter.out"
 #define LOCK_FILE_TEMPLATE	"/var/tmp/fermenter%u"
+#define CSV_FILE_TEMPLATE	"/var/www/html/fermenter/fermenter%u_%03u.csv"
 
 #define FILE_NAME_LENGTH	80
+#define MAX_LOG_NO			999
 
 #define DAEMON_GID			997			/* The gpio group */
 #define DAEMON_UID			1001		/* jcallan */
@@ -37,12 +39,85 @@ typedef struct
 	programme_t *head;
 	programme_t *current;
 	time_t programme_start_time;
+	FILE *csv_file;
 	char programme_file_name[FILE_NAME_LENGTH];
 } fermenter_t;
 
 void write_lock_file(const fermenter_t *f);
 void read_lock_file(fermenter_t *f);
 
+void rotate_csv_files(unsigned fermenter_no, unsigned max_log_no)
+{
+	int i, ret;
+	char new_file_name[FILE_NAME_LENGTH], old_file_name[FILE_NAME_LENGTH];
+	struct stat stat_buf;
+	
+	/* If there is already space for this log file, we're done */
+	sprintf(new_file_name, CSV_FILE_TEMPLATE, fermenter_no, 0);
+	ret = stat(new_file_name, &stat_buf);
+	if (ret)
+	{
+		if (errno == ENOENT)
+		{
+			printf("No CSV files need rotating\n");
+		}
+		else
+		{
+			perror("Cannot stat CSV file");
+		}
+		return;
+	}
+			
+	/* First remove the highest possible filename */
+	sprintf(old_file_name, CSV_FILE_TEMPLATE, fermenter_no, max_log_no);
+	remove(old_file_name);
+	
+	/* Now rename each file using a higher number */
+	for (i = max_log_no - 1; i >= 0; --i)
+	{
+		sprintf(new_file_name, CSV_FILE_TEMPLATE, fermenter_no, i + 1);
+		sprintf(old_file_name, CSV_FILE_TEMPLATE, fermenter_no, i);
+		rename(old_file_name, new_file_name);
+	}
+}	
+
+void open_csv_file(fermenter_t *f)
+{
+	char file_name[FILE_NAME_LENGTH];
+	struct stat stat_buf;
+	int ret, need_header = 0;
+	
+	sprintf(file_name, CSV_FILE_TEMPLATE, f->index, 0);
+	ret = stat(file_name, &stat_buf);
+	if (ret)
+	{
+		if (errno == ENOENT)
+		{
+			need_header = 1;
+		}
+	}
+	else
+	{
+		if (stat_buf.st_size == 0)
+		{
+			need_header = 1;
+		}
+	}
+	
+	f->csv_file = fopen(file_name, "a");
+	
+	if (!f->csv_file)
+	{
+		perror("Can't open CSV file");
+	}
+	else
+	{
+		if (need_header)
+		{
+			fprintf(f->csv_file, "Time,Actual,Desired,Heat\n");
+		}
+	}
+}
 
 void *run_fermenter(void *arg)
 {
@@ -73,6 +148,7 @@ void *run_fermenter(void *arg)
 		f->head = load_programme(f->programme_file_name);
 		if (f->head)
 		{
+			rotate_csv_files(f->index, MAX_LOG_NO);
 			start_programme(f->head);
 			f->programme_start_time = f->head->start_time;
 		}
@@ -83,7 +159,7 @@ void *run_fermenter(void *arg)
 	}
 	
 	write_lock_file(f);
-
+	open_csv_file(f);
 	
 	while (f->command == FERMENTER_NO_COMMAND)
 	{
@@ -93,8 +169,10 @@ void *run_fermenter(void *arg)
 		heat = t_actual < t_desired;
 		printf("Fermenter %c: actual %.2f, desired %.2f, %s\n",
 			   f->id, t_actual, t_desired, heat ? "on" : "off");
+		fprintf(f->csv_file, "%lu,%.2f,%2.f,%d\n", now, t_actual, t_desired, heat);
 		set_heater(f->index, heat);
 		fflush(stdout);
+		fflush(f->csv_file);
 		sleep(60);
 	}
 	
@@ -295,11 +373,12 @@ int main(int argc, const char *argv[])
 	/* Initialise the state of the fermenters, if running */
 	for (i = 0; i < NUM_FERMENTERS; ++i)
 	{
-		fermenter[i].id      = fermenter_id[i];
-		fermenter[i].index   = i;
-		fermenter[i].head    = NULL;
-		fermenter[i].current = NULL;
-		fermenter[i].command = FERMENTER_NO_COMMAND;
+		fermenter[i].id       = fermenter_id[i];
+		fermenter[i].index    = i;
+		fermenter[i].csv_file = NULL;
+		fermenter[i].head     = NULL;
+		fermenter[i].current  = NULL;
+		fermenter[i].command  = FERMENTER_NO_COMMAND;
 		fermenter[i].programme_file_name[0] = 0;
 		fermenter[i].programme_start_time   = 0;
 		set_heater(i, 0);

@@ -12,6 +12,7 @@ programme_t *load_programme(const char *file_name)
 	float start_temp, end_temp, length;
 	char buf[80];
 	int ret;
+	char *sret;
 	unsigned num_steps = 0;
 	
 	programme_file = fopen(file_name, "r");
@@ -23,34 +24,37 @@ programme_t *load_programme(const char *file_name)
 	
 	do
 	{
-		fgets(buf, sizeof(buf), programme_file);
-		ret = sscanf(buf, "%f %f %f", &start_temp, &end_temp, &length);
-		if (ret != 3)
+		sret = fgets(buf, sizeof(buf), programme_file);
+		if (sret)
 		{
-			printf("Failed to read 3 arguments from line '%s'\n", buf);
-		}
-		else
-		{
-			prog = calloc(1, sizeof(programme_t));
-			if (prog)
+			ret = sscanf(buf, "%f %f %f", &start_temp, &end_temp, &length);
+			if (ret != 3)
 			{
-				prog->start_temp = start_temp;
-				prog->end_temp   = end_temp;
-				prog->length     = length;
-				prog->start_time = 0;
-				
-				if (last)
+				printf("Failed to read 3 arguments from line '%s'\n", buf);
+			}
+			else
+			{
+				prog = calloc(1, sizeof(programme_t));
+				if (prog)
 				{
-					last->next = prog;
+					prog->start_temp = start_temp;
+					prog->end_temp   = end_temp;
+					prog->length     = length;
+					prog->start_time = 0;
+
+					if (last)
+					{
+						last->next = prog;
+					}
+					if (!head)
+					{
+						head = prog;
+					}
+					last = prog;
+					++num_steps;
+					printf("Step %u: %.1f->%.1f in %.1f hours\n", num_steps,
+						   prog->start_temp, prog->end_temp, prog->length);
 				}
-				if (!head)
-				{
-					head = prog;
-				}
-				last = prog;
-				++num_steps;
-				printf("Step %u: %.1f->%.1f in %.1f hours\n", num_steps,
-					   prog->start_temp, prog->end_temp, prog->length);
 			}
 		}
 	} while (!feof(programme_file));

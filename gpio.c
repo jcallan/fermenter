@@ -33,6 +33,7 @@ float read_temperature(unsigned index)
 		if (f)
 		{
 			ret = fread(buf, 1, sizeof(buf) - 1, f);
+			fclose(f);
 			if (ret > 0)
 			{
 				buf[ret] = 0;
