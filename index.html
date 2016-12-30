@@ -12,55 +12,86 @@ var xhr;
 
 function main()
 {
-	console.log("Loading CSV...");
+	Chart.defaults.global.animation.duration = 0;
+	Chart.defaults.global.elements.line.fill = false;
+	
 	xhr = new XMLHttpRequest();
 	xhr.onreadystatechange = csv_xml_response;
-	xhr.open("GET", "/fermenter/fermenter0_000.csv", true);
+	xhr.open("GET", "/fermenter/fermenter0_005.csv", true);
 	xhr.setRequestHeader('Content-type', 'text/plain');
 	xhr.send();
 }
 
 function csv_xml_response(e)
 { 
-	console.log("XMLHTTP response " + e);
+//	console.log("XMLHTTP response " + e);
 	if (xhr.readyState == 4 && xhr.status == 200)
 	{
-		console.log("CSV done!");
+//		console.log("CSV done!");
 		csv_loaded(xhr.responseText);
 	}
 }
 
 function csv_loaded(csv_text) 
 {
-	console.log("CSV loaded");
+	var i, j, points = [];
+	
 	csv_data = $.csv.toArrays(csv_text);
 	
+	for (i = 1; i < csv_data[0].length; ++i)
+	{
+		points[i - 1] = [];
+		for (j = 1; j < csv_data.length - 1; ++j)
+		{
+			points[i - 1][j - 1] = {x: csv_data[j][0] * 1000, y: csv_data[j][i]};
+		}
+	}
+	
 	var ctx = document.getElementById("myChart");
-    	var myChart = new Chart(ctx, {
+   	var myChart = new Chart(ctx, {
     	type: 'line',
     	data: {
-        	datasets: [{
-            	label: 'Scatter Dataset',
-            	data: csv_data
-//				[{
-//                	x: -10,
-//                	y: 0
-//            	}, {
-//                	x: 0,
-//                	y: 10
-//            	}, {
-//                	x: 10,
-//                	y: 5
-//            	}]
-        	}]
+        	datasets: [
+				{
+            		label: 'Actual',
+            		data: points[0],
+					lineTension: 0,
+					yAxisID: 'L',
+					pointRadius: 0,
+					borderColor: 'RGBA(0,0,255,0.6)',
+        		},
+				{
+            		label: 'Desired',
+            		data: points[1],
+					lineTension: 0,
+					yAxisID: 'L',
+					borderColor: 'RGBA(255,0,0,0.6)',
+					pointRadius: 0,
+        		},
+				{
+            		label: 'Heat',
+            		data: points[2],
+					lineTension: 0,
+					yAxisID: 'R',
+					borderColor: 'RGBA(255,255,0,0.3)',
+					backgroundColor: 'RGBA(255,255,0,0.3)',
+					fill: true,
+					pointRadius: 0,
+        		},
+			]
     	},
     	options: {
+			title: {display: true, text: "Fermenter log"},
         	scales: {
             	xAxes: [{
-                	type: 'linear',
+                	type: 'time',
                 	position: 'bottom'
-            	}]
-        	}
+            	}],
+            	yAxes: [
+					{id: 'L', type: 'linear', position: 'left', ticks: {suggestedMin: 0, suggestedMax: 25}},
+					{id: 'R', type: 'linear', position: 'right', ticks: {min: 0, max: 5}, display: false},
+				]
+        	},
     	}
 	});
 }
