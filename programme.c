@@ -104,7 +104,7 @@ void start_programme(programme_t *head)
 
 float programme_temperature(programme_t *prog, time_t now)
 {
-	float temperature = 0.0, done_fraction;
+	float temperature = -99.0, done_fraction;
 	time_t end_time;
 	
 	while (prog)

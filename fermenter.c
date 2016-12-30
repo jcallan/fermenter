@@ -29,6 +29,7 @@ typedef enum
 {
 	FERMENTER_NO_COMMAND,
 	FERMENTER_STOP,
+	FERMENTER_START,
 } fermenter_cmd_t;
 
 typedef struct
@@ -45,6 +46,9 @@ typedef struct
 
 void write_lock_file(const fermenter_t *f);
 void read_lock_file(fermenter_t *f);
+void delete_lock_file(const fermenter_t *f);
+
+static fermenter_t fermenter[NUM_FERMENTERS];
 
 void rotate_csv_files(unsigned fermenter_no, unsigned max_log_no)
 {
@@ -119,61 +123,116 @@ void open_csv_file(fermenter_t *f)
 	}
 }
 
+int start_fermenter(fermenter_t *f)
+{
+	int ret = 0;
+	
+	printf("Starting programme %s on fermenter %c\n", f->programme_file_name, f->id);
+	f->head = load_programme(f->programme_file_name);
+	if (f->head)
+	{
+		rotate_csv_files(f->index, MAX_LOG_NO);
+		start_programme(f->head);
+		f->programme_start_time = f->head->start_time;
+		write_lock_file(f);
+		open_csv_file(f);
+	}
+	else
+	{
+		printf("Failed to read programme!\n");
+		ret = -1;
+	}
+
+	return ret;
+}
+
+void stop_fermenter(fermenter_t *f)
+{
+	printf("Stopping programme on fermenter %c\n", f->id);
+	set_heater(f->index, 0);
+	f->head = f->current = NULL;
+	f->programme_file_name[0] = 0;
+	f->programme_start_time   = 0;
+	delete_lock_file(f);
+	if (f->csv_file)
+	{
+		fclose(f->csv_file);
+		f->csv_file = NULL;
+	}
+}
+
 void *run_fermenter(void *arg)
 {
 	fermenter_t *f = (fermenter_t *)arg;
 	int heat = 0, ret;
 	float t_actual, t_desired;
-	time_t now;
+	time_t now, target_time;
 
-	f->programme_start_time = 0;
+	/* Initialise the state of the fermenter */
+	fermenter[f->index].id       = fermenter_id[f->index];
+	fermenter[f->index].index    = f->index;
+	fermenter[f->index].csv_file = NULL;
+	fermenter[f->index].head     = NULL;
+	fermenter[f->index].current  = NULL;
+	fermenter[f->index].command  = FERMENTER_NO_COMMAND;
+	fermenter[f->index].programme_file_name[0] = 0;
+	fermenter[f->index].programme_start_time   = 0;
+	set_heater(f->index, 0);
+
+	/* Do we need to restart a programme that was interrupted? */
 	read_lock_file(f);
 	if (f->programme_start_time && f->programme_file_name[0])
 	{
-		/* Attept to restart running programme */
+		/* Attept to restart programme */
 		f->head = load_programme(f->programme_file_name);
 		if (f->head)
 		{
 			restart_programme(f->head, f->programme_start_time);
+			open_csv_file(f);
 		}
 		else
 		{
 			printf("Failed to reload programme from %s\n", f->programme_file_name);
 		}
 	}
-	else
-	{
-		/* For now, start a fixed programme */
-		realpath("cb1.programme", f->programme_file_name);
-		f->head = load_programme(f->programme_file_name);
-		if (f->head)
-		{
-			rotate_csv_files(f->index, MAX_LOG_NO);
-			start_programme(f->head);
-			f->programme_start_time = f->head->start_time;
-		}
-		else
-		{
-			printf("Failed to read programme!\n");
-		}
-	}
 	
-	write_lock_file(f);
-	open_csv_file(f);
+	target_time = time(NULL);
 	
-	while (f->command == FERMENTER_NO_COMMAND)
+	while (1)
 	{
 		now = time(NULL);
-		t_actual = read_temperature(f->index);
-		t_desired = programme_temperature(f->head, now);
-		heat = t_actual < t_desired;
-		printf("Fermenter %c: actual %.2f, desired %.2f, %s\n",
-			   f->id, t_actual, t_desired, heat ? "on" : "off");
-		fprintf(f->csv_file, "%lu,%.2f,%2.f,%d\n", now, t_actual, t_desired, heat);
-		set_heater(f->index, heat);
-		fflush(stdout);
-		fflush(f->csv_file);
-		sleep(60);
+		if (now >= target_time && fermenter->head)
+		{
+			t_actual = read_temperature(f->index);
+			t_desired = programme_temperature(f->head, now);
+			if (t_desired < -10.0)
+			{
+				/* We have reached the end of the programme */
+				f->command = FERMENTER_STOP;
+			}
+			else
+			{
+				heat = t_actual < t_desired;
+				printf("Fermenter %c: actual %.2f, desired %.2f, %s\n",
+					   f->id, t_actual, t_desired, heat ? "on" : "off");
+				fprintf(f->csv_file, "%lu,%.2f,%.2f,%d\n", now, t_actual, t_desired, heat);
+				set_heater(f->index, heat);
+				fflush(stdout);
+				fflush(f->csv_file);
+			}
+			target_time += TIME_INCREMENT_S;
+		}
+		sleep(1);
+		if (f->command == FERMENTER_STOP)
+		{
+			stop_fermenter(f);
+		}
+		if (f->command == FERMENTER_START)
+		{
+			start_fermenter(f);
+			target_time = now;
+		}
+		f->command = FERMENTER_NO_COMMAND;
 	}
 	
 	return NULL;
@@ -185,6 +244,7 @@ void *listener(void *arg)
 	char buf[80];
 	int ret;
 	char *p;
+	unsigned fermenter_no, length;
 	
 	/* Make sure the control FIFOs exist */
 	ret = mkfifo(FIFO_IN_FILE_NAME, 0777);
@@ -237,6 +297,8 @@ void *listener(void *arg)
 			if (p)
 			{
 				printf("Listener read [%s]\n", buf);
+				length = strlen(buf);
+				
 				switch (buf[0])
 				{
 				case 'q':
@@ -246,6 +308,33 @@ void *listener(void *arg)
 
 				case 'v':
 					fprintf(fifo_out, "Fermenter Control version %u.%u\n", VERSION_MAJOR, VERSION_MINOR);
+					fflush(fifo_out);
+					break;
+					
+				case 'p':
+					if (length >= 3)
+					{
+						fermenter_no = buf[1] - '0';
+						if (fermenter_no < NUM_FERMENTERS)
+						{
+							if (fermenter[fermenter_no].head == NULL)
+							{
+								realpath(&buf[2], fermenter[fermenter_no].programme_file_name);
+								fermenter[fermenter_no].command = FERMENTER_START;
+							}
+						}
+					}
+					break;
+					
+				case 's':
+					if (length >= 2)
+					{
+						fermenter_no = buf[1] - '0';
+						if (fermenter_no < NUM_FERMENTERS)
+						{
+							fermenter[fermenter_no].command = FERMENTER_STOP;
+						}
+					}
 					break;
 					
 				default:
@@ -324,13 +413,21 @@ void write_lock_file(const fermenter_t *f)
 	}
 }
 
+void delete_lock_file(const fermenter_t *f)
+{
+	int ret;
+	char file_name[FILE_NAME_LENGTH];
+
+	sprintf(file_name, LOCK_FILE_TEMPLATE, f->index);
+	unlink(file_name);
+}
+
 int main(int argc, const char *argv[])
 {
 	int i, ret;
 	pthread_t listener_thread, led_thread, fermenter_thread[NUM_FERMENTERS];
 	FILE *control_fifo;
 	void *listener_return;
-	fermenter_t fermenter[NUM_FERMENTERS];
 	
 	/*  Drop superuser privileges */
 	if (setgid(DAEMON_GID) == -1)
@@ -368,20 +465,6 @@ int main(int argc, const char *argv[])
 	if (ret != 0)
 	{
 		return ret;
-	}
-	
-	/* Initialise the state of the fermenters, if running */
-	for (i = 0; i < NUM_FERMENTERS; ++i)
-	{
-		fermenter[i].id       = fermenter_id[i];
-		fermenter[i].index    = i;
-		fermenter[i].csv_file = NULL;
-		fermenter[i].head     = NULL;
-		fermenter[i].current  = NULL;
-		fermenter[i].command  = FERMENTER_NO_COMMAND;
-		fermenter[i].programme_file_name[0] = 0;
-		fermenter[i].programme_start_time   = 0;
-		set_heater(i, 0);
 	}
 	
 	/* Start the other threads */
