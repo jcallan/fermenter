@@ -4,20 +4,33 @@ var $={};
 var jQuery = $;
 </script>
 <script src="/jquery.csv.min.js"></script>
+<input type="number" id="csv_input">
 <canvas id="myChart" width="400" height="400"></canvas>
+
 
 <script>
 
-var xhr;
+var xhr, csv_input, myChart;
 
 function main()
 {
 	Chart.defaults.global.animation.duration = 0;
 	Chart.defaults.global.elements.line.fill = false;
+	csv_input = document.getElementById("csv_input");
+	csv_input.onchange = csv_input_change;
+	csv_input.value = "0";
+	csv_input.onchange();
+}
+
+function csv_input_change()
+{
+	var file_number = csv_input.value;
 	
+	file_number = "000".substr(0, 3 - file_number.length) + file_number;
+	console.log("Value is " + file_number);
 	xhr = new XMLHttpRequest();
 	xhr.onreadystatechange = csv_xml_response;
-	xhr.open("GET", "/fermenter/fermenter0_005.csv", true);
+	xhr.open("GET", "/fermenter/fermenter0_"+ file_number + ".csv", true);
 	xhr.setRequestHeader('Content-type', 'text/plain');
 	xhr.send();
 }
@@ -28,14 +41,16 @@ function csv_xml_response(e)
 	if (xhr.readyState == 4 && xhr.status == 200)
 	{
 //		console.log("CSV done!");
-		csv_loaded(xhr.responseText);
+		csv_loaded(xhr.responseText, xhr.responseURL);
 	}
 }
 
-function csv_loaded(csv_text) 
+function csv_loaded(csv_text, csv_url) 
 {
-	var i, j, points = [];
+	var i, j, points = [], url_bits, file_name;
 	
+	url_bits = csv_url.split('/');
+	file_name = url_bits[url_bits.length - 1];
 	csv_data = $.csv.toArrays(csv_text);
 	
 	for (i = 1; i < csv_data[0].length; ++i)
@@ -48,7 +63,7 @@ function csv_loaded(csv_text)
 	}
 	
 	var ctx = document.getElementById("myChart");
-   	var myChart = new Chart(ctx, {
+	myChart = new Chart(ctx, {
     	type: 'line',
     	data: {
         	datasets: [
@@ -81,7 +96,7 @@ function csv_loaded(csv_text)
 			]
     	},
     	options: {
-			title: {display: true, text: "Fermenter log"},
+			title: {display: true, text: file_name},
         	scales: {
             	xAxes: [{
                 	type: 'time',
