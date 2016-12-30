@@ -8,10 +8,32 @@ var jQuery = $;
 
 <script>
 
+var xhr;
+
 function main()
 {
-	var points_string = "x,y\n1,2\n3,4";
-	csv_data = $.csv.toArrays(points_string);
+	console.log("Loading CSV...");
+	xhr = new XMLHttpRequest();
+	xhr.onreadystatechange = csv_xml_response;
+	xhr.open("GET", "/fermenter/fermenter0_000.csv", true);
+	xhr.setRequestHeader('Content-type', 'text/plain');
+	xhr.send();
+}
+
+function csv_xml_response(e)
+{ 
+	console.log("XMLHTTP response " + e);
+	if (xhr.readyState == 4 && xhr.status == 200)
+	{
+		console.log("CSV done!");
+		csv_loaded(xhr.responseText);
+	}
+}
+
+function csv_loaded(csv_text) 
+{
+	console.log("CSV loaded");
+	csv_data = $.csv.toArrays(csv_text);
 	
 	var ctx = document.getElementById("myChart");
     	var myChart = new Chart(ctx, {
@@ -19,16 +41,17 @@ function main()
     	data: {
         	datasets: [{
             	label: 'Scatter Dataset',
-            	data: [{
-                	x: -10,
-                	y: 0
-            	}, {
-                	x: 0,
-                	y: 10
-            	}, {
-                	x: 10,
-                	y: 5
-            	}]
+            	data: csv_data
+//				[{
+//                	x: -10,
+//                	y: 0
+//            	}, {
+//                	x: 0,
+//                	y: 10
+//            	}, {
+//                	x: 10,
+//                	y: 5
+//            	}]
         	}]
     	},
     	options: {
