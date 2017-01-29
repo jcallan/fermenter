@@ -1,5 +1,5 @@
 #!/bin/sh
-gcc -c programme.c -o programme.o
-gcc -c gpio.c -o gpio.o
-gcc -c fermenter.c -o fermenter.o
-gcc fermenter.o programme.o gpio.o -lpthread -o fermenter
+gcc -Wall -c programme.c -o programme.o
+gcc -Wall -c gpio.c -o gpio.o
+gcc -Wall -c fermenter.c -o fermenter.o
+gcc -Wall fermenter.o programme.o gpio.o -lpthread -o fermenter

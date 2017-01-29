@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include <pthread.h>
 #include "fermenter.h"
 
@@ -48,7 +49,7 @@ float read_temperature(unsigned index)
 					else
 					{
 						printf("Couldn't parse temperature from file:\n%s\nLocated '%s'\n",
-							   buf, index, equals_ptr + 2);
+							   buf, equals_ptr + 2);
 					}
 				}
 				else
@@ -101,7 +102,7 @@ int init_gpio(void)
 		ret = system(buf);
 		if (ret != 0)
 		{
-			printf("Executing '%s' failed with return code %d\n", ret);
+			printf("Executing '%s' failed with return code %d\n", buf, ret);
 		}
 	}
 	for (i = 0; i < NUM_FERMENTERS; ++i)
@@ -110,7 +111,7 @@ int init_gpio(void)
 		ret = system(buf);
 		if (ret != 0)
 		{
-			printf("Executing '%s' failed with return code %d\n", ret);
+			printf("Executing '%s' failed with return code %d\n", buf, ret);
 		}
 	}
 	

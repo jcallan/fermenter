@@ -4,22 +4,34 @@ var $={};
 var jQuery = $;
 </script>
 <script src="/jquery.csv.min.js"></script>
+<b>Fermenter:</b>
+<input type="number" id="fermenter_input">
+<b>Log number:</b>
 <input type="number" id="csv_input">
 <canvas id="myChart" width="400" height="400"></canvas>
 
 
 <script>
 
-var xhr, csv_input, myChart;
+var xhr, csv_input, myChart, fermenter_input, fermenter_no = 0;
 
 function main()
 {
 	Chart.defaults.global.animation.duration = 0;
 	Chart.defaults.global.elements.line.fill = false;
-	csv_input = document.getElementById("csv_input");
-	csv_input.onchange = csv_input_change;
+
+	fermenter_input = document.getElementById("fermenter_input");
+	csv_input       = document.getElementById("csv_input");
+	fermenter_input.min = 0;
+	fermenter_input.max = 1;
+	csv_input.min       = 0;
+	csv_input.max       = 99;
+	fermenter_input.onchange = fermenter_input_change;
+	csv_input.onchange       = csv_input_change;
+
+	fermenter_input.value = fermenter_no;
 	csv_input.value = "0";
-	csv_input.onchange();
+	fermenter_input.onchange();
 }
 
 function csv_input_change()
@@ -27,21 +39,34 @@ function csv_input_change()
 	var file_number = csv_input.value;
 	
 	file_number = "000".substr(0, 3 - file_number.length) + file_number;
-	console.log("Value is " + file_number);
+	console.log("file_number is " + file_number);
 	xhr = new XMLHttpRequest();
 	xhr.onreadystatechange = csv_xml_response;
-	xhr.open("GET", "/fermenter/fermenter0_"+ file_number + ".csv", true);
+	xhr.open("GET", "/fermenter/fermenter" + fermenter_no + "_"+ file_number + ".csv", true);
 	xhr.setRequestHeader('Content-type', 'text/plain');
 	xhr.send();
 }
 
+function fermenter_input_change()
+{
+	fermenter_no = fermenter_input.value;
+	console.log("fermenter_no is " + fermenter_no);
+	csv_input.onchange();
+}	
+
 function csv_xml_response(e)
 { 
-//	console.log("XMLHTTP response " + e);
-	if (xhr.readyState == 4 && xhr.status == 200)
+//	console.log("XMLHTTP response " + xhr.readyState + " " + xhr.status);
+	if (xhr.readyState == 4)
 	{
-//		console.log("CSV done!");
-		csv_loaded(xhr.responseText, xhr.responseURL);
+		if (xhr.status == 200)
+		{
+			csv_loaded(xhr.responseText, xhr.responseURL);
+		}
+		if (xhr.status == 404)
+		{
+			alert("Couldn't find log file " + csv_input.value);
+		}
 	}
 }
 

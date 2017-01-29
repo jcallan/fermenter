@@ -3,6 +3,7 @@
 #include <time.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pthread.h>
@@ -116,6 +117,8 @@ void open_csv_file(fermenter_t *f)
 	}
 	else
 	{
+		/* Make the file line-buffered */
+		setvbuf(f->csv_file, NULL, _IOLBF, 0);
 		if (need_header)
 		{
 			fprintf(f->csv_file, "Time,Actual,Desired,Heat\n");
@@ -164,7 +167,7 @@ void stop_fermenter(fermenter_t *f)
 void *run_fermenter(void *arg)
 {
 	fermenter_t *f = (fermenter_t *)arg;
-	int heat = 0, ret;
+	int heat = 0;
 	float t_actual, t_desired;
 	time_t now, target_time;
 
@@ -200,7 +203,7 @@ void *run_fermenter(void *arg)
 	while (1)
 	{
 		now = time(NULL);
-		if (now >= target_time && fermenter->head)
+		if (now >= target_time && f->head)
 		{
 			t_actual = read_temperature(f->index);
 			t_desired = programme_temperature(f->head, now);
@@ -288,6 +291,7 @@ void *listener(void *arg)
 			printf("Failed to open output fifo %s, quitting\n", FIFO_OUT_FILE_NAME);
 			break;
 		}
+		/* Make the file line-buffered */
 		setvbuf(fifo_out, NULL, _IOLBF, 0);
 
 		/* Read the input FIFO until the other process disconnects */
@@ -308,7 +312,6 @@ void *listener(void *arg)
 
 				case 'v':
 					fprintf(fifo_out, "Fermenter Control version %u.%u\n", VERSION_MAJOR, VERSION_MINOR);
-					fflush(fifo_out);
 					break;
 					
 				case 'p':
@@ -321,6 +324,8 @@ void *listener(void *arg)
 							{
 								realpath(&buf[2], fermenter[fermenter_no].programme_file_name);
 								fermenter[fermenter_no].command = FERMENTER_START;
+								fprintf(fifo_out, "Starting programme [%s] on fermenter %u\n",
+										fermenter[fermenter_no].programme_file_name, fermenter_no);
 							}
 						}
 					}
@@ -333,6 +338,28 @@ void *listener(void *arg)
 						if (fermenter_no < NUM_FERMENTERS)
 						{
 							fermenter[fermenter_no].command = FERMENTER_STOP;
+							fprintf(fifo_out, "Stopping programme [%s] on fermenter %u\n",
+									fermenter[fermenter_no].programme_file_name, fermenter_no);
+						}
+					}
+					break;
+					
+				case 'i':
+					if (length >= 2)
+					{
+						fermenter_no = buf[1] - '0';
+						if (fermenter_no < NUM_FERMENTERS)
+						{
+							if (fermenter[fermenter_no].head)
+							{
+								fprintf(fifo_out, "Running programme [%s] on fermenter %u\n",
+										fermenter[fermenter_no].programme_file_name, fermenter_no);
+							}
+							else
+							{
+								fprintf(fifo_out, "Fermenter %u is stopped\n", fermenter_no);
+							}
+							
 						}
 					}
 					break;
@@ -361,7 +388,6 @@ void read_lock_file(fermenter_t *f)
 	char lock_file_name[FILE_NAME_LENGTH], buf[FILE_NAME_LENGTH + 15];
 	FILE *lock_file;
 	char *p;
-	time_t start_time;
 	int ret;
 	
 	sprintf(lock_file_name, LOCK_FILE_TEMPLATE, f->index);
@@ -415,7 +441,6 @@ void write_lock_file(const fermenter_t *f)
 
 void delete_lock_file(const fermenter_t *f)
 {
-	int ret;
 	char file_name[FILE_NAME_LENGTH];
 
 	sprintf(file_name, LOCK_FILE_TEMPLATE, f->index);
@@ -426,7 +451,6 @@ int main(int argc, const char *argv[])
 {
 	int i, ret;
 	pthread_t listener_thread, led_thread, fermenter_thread[NUM_FERMENTERS];
-	FILE *control_fifo;
 	void *listener_return;
 	
 	/*  Drop superuser privileges */
