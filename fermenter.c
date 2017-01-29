@@ -8,8 +8,8 @@
 #include <pthread.h>
 #include "fermenter.h"
 
-#define VERSION_MAJOR		0
-#define VERSION_MINOR		1
+#define VERSION_MAJOR		1
+#define VERSION_MINOR		0
 
 #define FIFO_IN_FILE_NAME	"/var/tmp/fermenter.in"
 #define FIFO_OUT_FILE_NAME	"/var/tmp/fermenter.out"
@@ -169,14 +169,13 @@ void *run_fermenter(void *arg)
 	time_t now, target_time;
 
 	/* Initialise the state of the fermenter */
-	fermenter[f->index].id       = fermenter_id[f->index];
-	fermenter[f->index].index    = f->index;
-	fermenter[f->index].csv_file = NULL;
-	fermenter[f->index].head     = NULL;
-	fermenter[f->index].current  = NULL;
-	fermenter[f->index].command  = FERMENTER_NO_COMMAND;
-	fermenter[f->index].programme_file_name[0] = 0;
-	fermenter[f->index].programme_start_time   = 0;
+	f->id       = fermenter_id[f->index];
+	f->csv_file = NULL;
+	f->head     = NULL;
+	f->current  = NULL;
+	f->command  = FERMENTER_NO_COMMAND;
+	f->programme_file_name[0] = 0;
+	f->programme_start_time   = 0;
 	set_heater(f->index, 0);
 
 	/* Do we need to restart a programme that was interrupted? */
@@ -289,6 +288,7 @@ void *listener(void *arg)
 			printf("Failed to open output fifo %s, quitting\n", FIFO_OUT_FILE_NAME);
 			break;
 		}
+		setvbuf(fifo_out, NULL, _IOLBF, 0);
 
 		/* Read the input FIFO until the other process disconnects */
 		while(1)
@@ -470,7 +470,11 @@ int main(int argc, const char *argv[])
 	/* Start the other threads */
 	pthread_create(&listener_thread, NULL, listener, NULL);
 	pthread_create(&led_thread, NULL, update_leds, NULL);
-	pthread_create(&fermenter_thread[0], NULL, run_fermenter, &fermenter[0]);
+	for (i = 0; i < NUM_FERMENTERS; ++i)
+	{
+		fermenter[i].index = i;
+		pthread_create(&fermenter_thread[i], NULL, run_fermenter, &fermenter[i]);
+	}
 
 	pthread_join(listener_thread, &listener_return);
 	

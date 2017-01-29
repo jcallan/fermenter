@@ -11,7 +11,7 @@
 
 const unsigned led_index[NUM_LEDS] = {14, 3, 2};		/* GPIO pins for LEDs A, B, Centre */
 const unsigned heater_index[NUM_FERMENTERS] = {24, 10};	/* GPIO pins for relays */
-const unsigned long long sensor_serial[NUM_FERMENTERS] = {0x03168169dfffull, 0x0ull};
+const unsigned long long sensor_serial[NUM_FERMENTERS] = {0x03168169dfffull, 0x0416857569ffull};
 
 static FILE *heater[NUM_FERMENTERS];
 static FILE *led[NUM_LEDS];
