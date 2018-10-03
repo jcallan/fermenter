@@ -12,8 +12,8 @@ the file consists of the start time (in Unix format) and the file name of the pr
 Control the fermenter using the FIFOs:
 	/var/tmp/fermenter.out and
 	/var/tmp/fermenter.in
-This can be achieved by running 'cat /var/tmp/fermenter.out' in one terminal and
-'echo -n "command" >> /var/tmp/fermenter.out' in another.
+This can be achieved by running 'cat /var/tmp/fermenter.out &' and
+'echo -n "command" >> /var/tmp/fermenter.in' in another.
 	
 Send the followiung commands to fermenter.in, output (if any) will be written to fermenter.out:
 	v: Daemon responds with version information.
